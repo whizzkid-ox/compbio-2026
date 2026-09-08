@@ -61,14 +61,16 @@ def main():
                                   'environment': {'MODE': a.mode, 'RUN_ROOT': a.root, 'COMMIT': a.commit,
                                                   'WORKER': str(a.worker), 'BACKEND': a.backend,
                                                   'SPLIT': a.split}},
-                       'scheduling': {'interactive': False}}}
+                       'scheduling': {'interactive': False, 'restartable': False,
+                                      'minDuration': '10 minutes',
+                                      'maxDuration': '6 hours' if a.mode == 'preflight' else '14 days'}}}
     destination = Path(__file__).parent / 'submissions' / Path(a.root).name
     destination.mkdir(parents=True, exist_ok=True)
     spec = destination / f'{a.mode}_{a.worker}.json'
     # Refuse accidental duplicate submissions of this exact slot.
     receipt = spec.with_suffix('.receipt.txt')
-    if a.submit and receipt.exists():
-        raise FileExistsError(receipt)
+    if a.submit and receipt.exists() and re.search(r'[0-9a-f]{8}-[0-9a-f-]{27,}', receipt.read_text(encoding='utf-8')):
+        raise FileExistsError(f'An accepted job receipt already exists: {receipt}')
     spec.write_text(json.dumps(job, indent=2), encoding='utf-8')
     print(spec)
     if a.submit:
