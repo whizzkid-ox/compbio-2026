@@ -43,7 +43,8 @@ def main():
     p.add_argument('--worker', type=int, default=0)
     p.add_argument('--split', choices=['train', 'test'], required=True)
     p.add_argument('--backend', choices=['gpu', 'cpu'], default='gpu')
-    p.add_argument('--cluster', type=int, default=11)
+    p.add_argument('--cluster', type=int, default=None,
+                   help='Optional GPULab cluster constraint; omit to use any eligible GPU node')
     p.add_argument('--submit', action='store_true')
     p.add_argument('--hold', action='store_true', help='Submit but hold until the preflight is complete')
     a = p.parse_args()
@@ -53,10 +54,12 @@ def main():
         p.error('Run root must be an isolated compbio-2026 run directory')
     if a.worker not in range(4):
         p.error('At most four worker slots are supported')
+    resources = {'cpus': 4, 'gpus': int(a.backend == 'gpu'), 'cpuMemoryGb': 24}
+    if a.cluster is not None:
+        resources['clusterId'] = a.cluster
     job = {'name': f'compbio-shd-{a.split}-{a.mode}-{a.worker}',
            'description': f'Comp-bio Summer School SHD {a.split}; separate from URENIMOD research',
-           'request': {'resources': {'cpus': 4, 'gpus': int(a.backend == 'gpu'), 'cpuMemoryGb': 24,
-                                     **({'clusterId': a.cluster} if a.backend == 'gpu' else {})},
+           'request': {'resources': resources,
                        'docker': {'image': 'python:3.12-slim', 'command': ['bash', '-c', BOOT],
                                   'storage': [{'hostPath': '/project_ghent', 'containerPath': '/project_ghent'}],
                                   'environment': {'MODE': a.mode, 'RUN_ROOT': a.root, 'COMMIT': a.commit,
