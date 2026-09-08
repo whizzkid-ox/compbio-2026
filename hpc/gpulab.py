@@ -29,7 +29,7 @@ fi
 cd "$RUN_ROOT/code"
 test "$(git rev-parse HEAD)" = "$COMMIT"
 export PYTHONPATH="$RUN_ROOT/code/src:$RUN_ROOT/code"
-exec "$RUN_ROOT/venv/bin/python" -u hpc/run_remote.py "$MODE" --root "$RUN_ROOT" --worker "$WORKER" --backend "$BACKEND"
+exec "$RUN_ROOT/venv/bin/python" -u hpc/run_remote.py "$MODE" --root "$RUN_ROOT" --worker "$WORKER" --backend "$BACKEND" --split "$SPLIT"
 '''
 
 def main():
@@ -41,6 +41,7 @@ def main():
     p.add_argument('--commit', required=True)
     p.add_argument('--root', required=True)
     p.add_argument('--worker', type=int, default=0)
+    p.add_argument('--split', choices=['train', 'test'], required=True)
     p.add_argument('--backend', choices=['gpu', 'cpu'], default='gpu')
     p.add_argument('--cluster', type=int, default=11)
     p.add_argument('--submit', action='store_true')
@@ -51,14 +52,15 @@ def main():
         p.error('Run root must be an isolated compbio-2026 run directory')
     if a.worker not in range(4):
         p.error('At most four worker slots are supported')
-    job = {'name': f'compbio-shd-{a.mode}-{a.worker}',
-           'description': 'Comp-bio Summer School SHD; separate from URENIMOD research',
+    job = {'name': f'compbio-shd-{a.split}-{a.mode}-{a.worker}',
+           'description': f'Comp-bio Summer School SHD {a.split}; separate from URENIMOD research',
            'request': {'resources': {'cpus': 4, 'gpus': int(a.backend == 'gpu'), 'cpuMemoryGb': 24,
                                      **({'clusterId': a.cluster} if a.backend == 'gpu' else {})},
                        'docker': {'image': 'python:3.12-slim', 'command': ['bash', '-c', BOOT],
-                                  'storage': [{'containerPath': '/project_ghent'}],
+                                  'storage': [{'hostPath': '/project_ghent', 'containerPath': '/project_ghent'}],
                                   'environment': {'MODE': a.mode, 'RUN_ROOT': a.root, 'COMMIT': a.commit,
-                                                  'WORKER': str(a.worker), 'BACKEND': a.backend}},
+                                                  'WORKER': str(a.worker), 'BACKEND': a.backend,
+                                                  'SPLIT': a.split}},
                        'scheduling': {'interactive': False}}}
     destination = Path(__file__).parent / 'submissions' / Path(a.root).name
     destination.mkdir(parents=True, exist_ok=True)

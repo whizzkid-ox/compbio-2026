@@ -23,11 +23,11 @@ def call(argv, log, backend=None):
         result.check_returncode()
     return time.perf_counter() - start
 
-def preflight(root):
+def preflight(root, split):
     from compbio2026.data import fetch
-    data = Path(fetch('train', str(root / 'data')))
+    data = Path(fetch(split, str(root / 'data')))
     print('Dataset:', data, digest_file(data), flush=True)
-    expected = '2bddb4bd46732f09982b7d1631b7c29c19853c73d3d240e3eb32bba909bdd6c1'
+    expected = {'train': '2bddb4bd46732f09982b7d1631b7c29c19853c73d3d240e3eb32bba909bdd6c1', 'test': ''}[split]
     if expected and digest_file(data) != expected:
         raise ValueError('Downloaded TRAIN differs from locally validated data')
     logs = root / 'logs'
@@ -40,7 +40,7 @@ def preflight(root):
     for model in ['adex', 'hh']:
         for backend in ['cpu', 'gpu']:
             output = root / f'preflight_{model}_{backend}'
-            seconds = call([f'simulate_ff_rec_{model}_full.py', '--data-path', data,
+            seconds = call([f'simulate_ff_rec_{model}_full.py', '--data-path', data, '--split', split,
                             '--smoke-test', '--run-dir', output], logs / f'{model}_{backend}.log', backend)
             metadata = json.loads((output / 'metadata.json').read_text())
             if metadata['status'] != 'complete':
@@ -53,7 +53,7 @@ def preflight(root):
                 if key == 'metadata_json':
                     continue
                 np.testing.assert_array_equal(cpu[key], gpu[key], err_msg=f'CPU/GPU {model}: {key}')
-        call([f'param_sweep_{model}.py', '--data-path', data, '--split', 'train',
+        call([f'param_sweep_{model}.py', '--data-path', data, '--split', split,
               '--output-dir', root / 'sweeps', '--list-configs', '--dry-run'], logs / f'{model}_manifest.log')
         manifest = next((root / 'sweeps').glob(f'*_{"AdEx" if model == "adex" else "HH"}_parameter_sweep_*'))
         plan.append({'model': model, 'manifest': str(manifest)})
@@ -104,7 +104,7 @@ def worker(root, slot, backend):
             worked = True
             break
         if not pending:
-            print('All 24 TRAIN jobs complete', flush=True)
+            print('All 24 jobs complete', flush=True)
             return
         if not worked:
             time.sleep(30)
@@ -116,10 +116,11 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--worker', type=int, default=0)
     parser.add_argument('--backend', choices=['cpu', 'gpu'], default='gpu')
+    parser.add_argument('--split', choices=['train', 'test'], required=True)
     args = parser.parse_args()
     if args.root.parent != Path('/project_ghent/rsegawa/compbio-2026/runs'):
         raise ValueError('Refusing a path outside the isolated compbio run namespace')
     if args.mode == 'preflight':
-        preflight(args.root)
+        preflight(args.root, args.split)
     else:
         worker(args.root, args.worker, args.backend)
