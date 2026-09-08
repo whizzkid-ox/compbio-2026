@@ -1,59 +1,55 @@
-r"""Matched HH feedforward/recurrent networks and raw-SHD input-conductance sweeps.
+r"""Replay raw SHD spikes through matched feedforward and recurrent AdEx networks.
 
-Self-contained counterpart to simulate_ff_rec_adex.py; no imports from that script.
-700 BC voltage clamps drive E and I neurons with the SAME standard jaxley.HH
-intrinsic parameters. FF has no downstream edges; REC adds E->E, E->I, I->E,
-I->I with positive conductances and appropriate reversal potentials. In FF,
-I names the corresponding population but has no inhibitory outgoing influence.
+Run with the existing environment: .venv\Scripts\python.exe simulate_ff_rec_adex.py
+Use --help, --smoke-test (two training trials), or --validate (additional controls).
+--sweep-input-g evaluates a fixed subset at seven input conductances; customise
+with --input-g-values "3e-5,3e-4". The notebook's G_SYN is exactly input_g (uS
+per input synapse), not an independent parameter. Recurrent strengths stay fixed.
+Sweep CSVs use [0,input_ms), with separate pre/post statistics. The pooled median
+voltage is exact, calculated with a disk-backed temporary array; full-dataset
+traces are never collected in RAM. --save-sweep-events saves ordinary-schema
+event archives per point. Failed numerical evaluations remain explicit missing
+values, never zero-rate observations. No value is selected as a new default.
+--posthoc-input-g evaluates model-specific candidates on exactly five TRAIN trials
+per English digit (50 total), with validation and event archives enabled.
+--compare-posthoc-dir points to the completed other-model post-hoc directory.
+No downloads, learning, decoding, or course-repository modifications are performed.
+FF: BC -> E and I, without downstream connections. REC adds E->E, E->I,
+I->E and I->I. In FF, I denotes the matched population; it exerts no inhibition.
 
-Use .venv\Scripts\python.exe simulate_ff_rec_hh.py --smoke-test for two trials.
---sweep-input-g evaluates seven strengths on the configured fixed small subset.
---input-g-values "3e-5,3e-4" selects a custom grid. Notebook G_SYN is input_g,
-not an independent parameter. Ordinary baseline remains 3e-5 uS; 3e-4 uS is
-only a reference value. No calibration, training, decoding or full-data sweep.
+Storage: each execution creates results/<UTC timestamp>_<UUID>/events.npz.
+Load with np.load(path, allow_pickle=False). For condition C (FF or REC), trial k
+occupies slice(C_offsets[k], C_offsets[k+1]) of C_times_ms and C_neuron_ids.
+The complete roster is neuron_ids/population; a silent neuron still has an ID.
+Primary spikes have 0 <= time <= input_ms + post_ms; pre-stimulus spikes are in
+C_pre_times_ms / C_pre_neuron_ids / C_pre_offsets and have negative times.
+metadata_json is a Unicode scalar, also written as readable metadata.json.
+Connection matrices use [presynaptic, postsynaptic] order. Input IDs are always
+0..699; output IDs are 0..n_exc+n_inh-1 (E first). No pickle/object arrays.
 
-Raw replay: float64 seconds to ms, ceiling grid mapping, half-open input window,
-700 unchanged input IDs, -70/+20 mV square pulses of 1 ms, reported collisions,
-overlap and truncation. Settling precedes input. Each trial and sweep evaluation
-restarts voltage, equilibrium HH gates and zero synaptic gates. Recurrence uses
-actual HH voltage, with no artificial output waveform or reset. Equal maximal
-conductances across neuron models do not imply equal effective recurrent drive.
+To use the course analysis later, split event arrays using offsets, divide times
+by 1000, and build compbio2026.data.SHD(times, units, labels, speaker). Supply
+n_channels=len(neuron_ids) explicitly to build_design_matrix (default is 700).
+The closed final simulation endpoint is saved; a half-open analysis window will
+exclude events exactly at its endpoint. No filtering is performed in this file.
 
-HH uses the installed HH channel without modifications. Conductance densities
-are S/cm2: gNa=.12, gK=.036, gLeak=.0003; eNa=50, eK=-77, eLeak=-54.3 mV.
-All installed values and source hash are recorded; gates initialise through
-net.init_states at each neuron's initial voltage. Per-synapse g is in uS.
+References inspected (local checkout lacks spiking.py and notebooks 08/09):
+https://github.com/CNNC-Lab/compbio-2026/tree/c7d722328959b7ff2ed7abc37278b0fbb5236929
+  src/compbio2026/{data,spiking}.py; notebooks/08_full_spiking_model.ipynb;
+  notebooks/09_state_matrix.ipynb (AdEx input gS=3e-5 uS).
+https://github.com/CNNC-Lab/computational-biology-2025/blob/main/tutorial_example_P1_2_NEST3.ipynb
+  E/I architecture only: no NEST current weights or delays are transferred.
 
-HH output spikes are upward crossings of --threshold-mv (default 0). Sample k
-is at k*dt, including the initial recording at sample 0. Times subtract ONLY
-the settling offset. Primary events cover [0,input_ms+post_ms], final endpoint
-included; separate negative-time pre-stimulus arrays are preserved.
-
-Ordinary event schema: C_times_ms, C_neuron_ids, C_offsets for C=FF/REC and
-C_pre_times_ms/C_pre_neuron_ids/C_pre_offsets. Trial k occupies offsets[k]:
-offsets[k+1]. neuron_ids/population contain the complete roster, including silent
-neurons. Input IDs are 0..699; local E IDs 0..79, I 80..99 by default. Connection
-matrices are [pre,post]. All NPZs load with allow_pickle=False. HH diagnostic
-NPZs store voltage, spike_crossings and HH_m/HH_h/HH_n, with no adaptation field.
-To use course utilities, create an SHD object with event times divided by 1000
-(seconds) and explicitly pass n_channels=len(neuron_ids) to build_design_matrix.
-
-Sweep primary measurements use [0,input_ms), with separate pre/post summaries.
-CSV tables and PNGs live in a unique model-named directory. Pooled median voltage
-is exact using temporary disk storage; dataset-sized voltage arrays never collect
-in RAM. --save-sweep-events emits compatible per-conductance event archives.
-Recognised numerical failures retain explicit errors and blank measurements.
---validate includes repeat/reset, parameter isolation, ordinary/sweep equivalence,
-reverse-order checks and a separate single-cell 0.1/0.05 ms HH timestep check.
-
-References inspected: Part 1 of notebooks/08_jaxley_hh_layer.ipynb and
-src/compbio2026/spiking.py at https://github.com/CNNC-Lab/compbio-2026/tree/cf69a137c3709913031f09598d494846d5272393
-No filtered/pooled/compressed training pipeline is used. Numerical choices remain
-provisional and are not validated biological parameters.
+Compatibility: Jaxley 0.14.0 AdEx updates voltage directly, omitting the factor
+1000 converting mA/cm2 to uA/cm2 against capacitance in uF/cm2. A numerical
+probe selects a minimal unit wrapper below; physical ADEX_PARAMS stay intact.
+It also resets immediately, unlike the cap described in the course notebook.
+Consequently its AdEx_spikes flag is authoritative, and -20 mV crossings are
+diagnostic only. Recurrence uses its actual evolving presynaptic voltage;
+there is no imposed output AP waveform, conduction delay, or refractory period.
+All numerical choices are provisional, not validated biological parameters.
 """
 
-# --posthoc-input-g: fixed 50-trial balanced TRAIN evaluation with event archives.
-# --compare-posthoc-dir: completed counterpart for explicit cross-model comparison.
 from __future__ import annotations
 
 import argparse
@@ -79,14 +75,16 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jaxley as jx
-from jaxley.channels import HH, Leak
+from jaxley.channels import AdEx, Leak
 from jaxley.connect import connectivity_matrix_connect
 from jaxley.synapses import IonotropicSynapse
 
 ROOT = Path(__file__).resolve().parent
 COURSE = ROOT if (ROOT / "src/compbio2026/spiking.py").is_file() else ROOT / "compbio-2026"
 N_INPUT = 700
-MODEL_NAME = "HH"
+MODEL_NAME = "AdEx"
+ADEX_PARAMS = {"AdEx_g_L": 5e-5, "AdEx_a": 1e-5,
+               "AdEx_b": 0.0, "AdEx_tau_w": 100.0}
 REFERENCE_COMMIT = "c7d722328959b7ff2ed7abc37278b0fbb5236929"
 
 
@@ -131,7 +129,12 @@ class Config:
     replay_spike_mv: float = 20.0
     initial_mv: float = -70.0
     initial_sd_mv: float = 0.0
-    threshold_mv: float = 0.0
+    initial_w: float = 0.0
+    adex_g_l: float = 5e-5
+    adex_a: float = 1e-5
+    adex_b: float = 0.0
+    adex_tau_w: float = 100.0
+    threshold_mv: float = -20.0
     output_dir: str = str(ROOT / "results")
     diagnostic_trials: int = 1
     smoke_test: bool = False
@@ -201,13 +204,15 @@ def check_config(c):
     if not 1 <= c.fan_in <= N_INPUT or c.width <= 0:
         raise ValueError("Require fan-in in 1..700 and width>0")
     for key in ("input_tau_ms", "rec_exc_tau_ms", "rec_inh_tau_ms",
-                "input_delta_mv", "rec_delta_mv"):
+                "input_delta_mv", "rec_delta_mv", "adex_tau_w", "adex_g_l"):
         if getattr(c, key) <= 0:
             raise ValueError(f"{key} must be positive")
-    for key in ("input_g", "rec_exc_g", "rec_inh_g",
+    for key in ("input_g", "rec_exc_g", "rec_inh_g", "adex_a", "adex_b",
                 "initial_sd_mv", "diagnostic_trials"):
         if getattr(c, key) < 0:
             raise ValueError(f"{key} must be nonnegative")
+    if not -50 < c.threshold_mv < 0:
+        raise ValueError("Diagnostic crossing threshold must be above v_T=-50 and below 0 mV")
     if c.replay_spike_mv <= c.replay_rest_mv:
         raise ValueError("Replay spike voltage must exceed rest")
     if c.sweep_input_g or c.posthoc_input_g:
@@ -358,23 +363,57 @@ def replay(times_seconds, units, c):
     return wave, report, (times, units), (np.asarray(pulse_bins) * c.dt_ms, np.asarray(pulse_channels, dtype=np.int32))
 
 
-def hh_implementation_info():
-    channel = HH()
-    return {"installed_HH_source_sha256": hashlib.sha256(inspect.getsource(HH).encode()).hexdigest(),
-            "channel_parameters": channel.channel_params,
-            "conductance_units": "S/cm2; synaptic point conductance is separately in uS",
-            "gate_initialisation": "net.init_states(delta_t): alpha(V)/(alpha(V)+beta(V)) at each initial voltage",
-            "gating_kinetics": "Installed HH.m_gate, h_gate, n_gate; exponential gate update, rates in 1/ms",
-            "current_handling": "Standard Jaxley HH.compute_current and solver; no custom current-unit adapter"}
+def adex_compatibility():
+    """Fail closed on an unrecognised implementation; numerically verify units."""
+    channel = AdEx(surrogate_warning=False)
+    if "AdEx_spikes" not in channel.channel_states:
+        raise RuntimeError("This script requires the inspected AdEx spike-state API")
+    physical = {**channel.channel_params, **ADEX_PARAMS, "capacitance": 1.0}
+    params = {k: jnp.array([float(v)]) for k, v in physical.items()}
+    states = {k: jnp.array([float(v)]) for k, v in channel.channel_states.items()}
+    voltage = jnp.array([-60.0])
+    out = channel.update_states(states, 0.1, voltage, params)
+    expected = .1 * 1000 * (-5e-5 * 10 + 5e-5 * 2 * np.exp(-5) - float(out["AdEx_w"][0]))
+    observed = float(out["v"][0] + 60)
+    if np.isclose(observed, expected, rtol=1e-5, atol=1e-10):
+        factor = 1.0
+    elif np.isclose(observed * 1000, expected, rtol=1e-5, atol=1e-10):
+        factor = 1000.0
+    else:
+        raise RuntimeError(f"Unrecognised AdEx units: dv={observed}, expected={expected}")
+    return factor, {"physical_probe_dv_mv": expected, "installed_probe_dv_mv": observed,
+                    "internal_current_conversion_factor": factor,
+                    "installed_adex_source_sha256": hashlib.sha256(inspect.getsource(AdEx).encode()).hexdigest()}
 
 
-def build_network(c, inputs, recurrent, initial, condition):
+class CourseAdEx(AdEx):
+    """Use installed AdEx dynamics with an explicitly probed current-unit adapter.
+
+    Stored g_L/a are S/cm2, b/w are mA/cm2. Rescale temporary parameters and w
+    for the direct update only, then restore w units. Reset and adaptation
+    equations are the installed implementation, with identical E/I settings.
+    """
+    def __init__(self, conversion):
+        super().__init__(name="AdEx", surrogate_warning=False)
+        self.conversion = conversion
+
+    def update_states(self, states, dt, v, params):
+        p, s = dict(params), dict(states)
+        for key in ("AdEx_g_L", "AdEx_a", "AdEx_b"):
+            p[key] = p[key] * self.conversion
+        s["AdEx_w"] = s["AdEx_w"] * self.conversion
+        out = super().update_states(s, dt, v, p)
+        out["AdEx_w"] = out["AdEx_w"] / self.conversion
+        return out
+
+
+def build_network(c, inputs, recurrent, initial, condition, conversion):
     cell = jx.Cell(jx.Branch(jx.Compartment(), ncomp=1), parents=[-1])
     net = jx.Network([cell] * (N_INPUT + c.n_out))
     pre = net.cell(list(range(N_INPUT)))
     post = net.cell(list(range(N_INPUT, N_INPUT + c.n_out)))
     pre.insert(Leak())
-    post.insert(HH())
+    post.insert(CourseAdEx(conversion))
     for key, value in {"radius": 10., "length": 10., "capacitance": 1., "v": c.replay_rest_mv}.items():
         net.set(key, value)
     # Jaxley views snapshot their columns: refresh after channel insertion.
@@ -383,11 +422,13 @@ def build_network(c, inputs, recurrent, initial, condition):
     # Zero input leak makes the previous clamped voltage exact during synapse update.
     pre.set("Leak_gLeak", 0.0)
     post.set("v", initial)
-    neuron_params = dict(HH().channel_params)
+    neuron_params = {**AdEx(surrogate_warning=False).channel_params,
+                     "AdEx_g_L": c.adex_g_l, "AdEx_a": c.adex_a,
+                     "AdEx_b": c.adex_b, "AdEx_tau_w": c.adex_tau_w}
     for key, value in neuron_params.items():
         post.set(key, value)
-    net.init_states(delta_t=c.dt_ms)
-    post = net.cell(list(range(N_INPUT, N_INPUT + c.n_out)))
+    post.set("AdEx_w", c.initial_w)
+    post.set("AdEx_spikes", 0.0)
     specs = {"InputExc": (c.input_g, c.exc_reversal_mv, c.input_tau_ms, c.input_vth_mv, c.input_delta_mv)}
     connectivity_matrix_connect(pre, post, IonotropicSynapse("InputExc"), inputs)
     if condition == "REC":
@@ -412,8 +453,8 @@ def build_network(c, inputs, recurrent, initial, condition):
             assert np.all(net.edges.loc[mask, key].to_numpy() == value)
             assert net.edges.loc[~mask, key].isna().all(), "Synapse names must isolate E/I parameters"
     post.record("v", verbose=False)
-    for state in ("HH_m", "HH_h", "HH_n"):
-        post.record(state, verbose=False)
+    post.record("AdEx_spikes", verbose=False)
+    post.record("AdEx_w", verbose=False)
     # Bookkeeping remains concrete outside JIT; only waveform and recurrence scale vary.
     names, _, inds = pre.data_clamp("v", np.zeros((N_INPUT, 1)), verbose=False)
     templates = []
@@ -433,7 +474,7 @@ def build_network(c, inputs, recurrent, initial, condition):
     def run(waveform, recurrent_scale=1.0, input_g=None):
         parameters = parameter_state(input_g, recurrent_scale)
         # No t_max: the clamp defines an exact integer step count, avoiding float //.
-        # No all_states: every call reconstructs initial voltage and neuronal/synaptic gates.
+        # No all_states: every call reconstructs initial voltage, w, flags and gates.
         return jx.integrate(net, data_clamps=(names, [waveform], inds),
                             param_state=parameters, delta_t=c.dt_ms)
 
@@ -442,28 +483,20 @@ def build_network(c, inputs, recurrent, initial, condition):
             "parameter_state": parameter_state}
 
 
-def detect_hh_spikes(v, threshold=0.0):
-    """Upward crossings at sample k+1; no reset or imposed refractory period."""
-    events = np.zeros_like(v, dtype=bool)
-    events[..., 1:] = (v[..., 1:] > threshold) & (v[..., :-1] <= threshold)
-    return events
-
-
 def simulate(model, waveform, c, recurrent_scale=1.0, input_g=None):
     if input_g is None:
         recordings = np.asarray(model["run"](jnp.asarray(waveform), recurrent_scale))
     else:
         recordings = np.asarray(model["run"](jnp.asarray(waveform), recurrent_scale,
                                               jnp.asarray(input_g, dtype=jnp.float64)))
-    if recordings.shape != (4 * c.n_out, c.n_steps + 1):
-        raise AssertionError(f"Unexpected HH recording shape {recordings.shape}")
+    if recordings.shape != (3 * c.n_out, c.n_steps + 1):
+        raise AssertionError(f"Unexpected recording shape {recordings.shape}")
     if not np.isfinite(recordings).all():
-        raise FloatingPointError("Non-finite HH voltage or gating state")
-    v = recordings[:c.n_out]
-    gates = recordings[c.n_out:].reshape(3, c.n_out, c.n_steps + 1)
-    if np.any((gates < -1e-10) | (gates > 1 + 1e-10)):
-        raise FloatingPointError("HH gates outside [0,1]")
-    return v, detect_hh_spikes(v, c.threshold_mv), gates
+        raise FloatingPointError("Non-finite voltage, spike flag or adaptation state")
+    v, flags, w = np.split(recordings, 3)
+    if not np.isin(flags, [0, 1]).all() or flags[:, 0].any():
+        raise AssertionError("Invalid/reset-carried spike flags")
+    return v, flags.astype(bool), w
 
 
 def extract_events(flags, c):
@@ -478,12 +511,29 @@ def extract_events(flags, c):
 
 
 def crossing_audit(v, flags, c):
-    np.testing.assert_array_equal(flags, detect_hh_spikes(v, c.threshold_mv))
-    return {"threshold_crossings": int(flags.sum()), "threshold_mv": c.threshold_mv,
-            "detector": "upward crossing: v[k]<=threshold and v[k+1]>threshold; timestamp at k+1"}
+    crossings = (v[:, 1:] > c.threshold_mv) & (v[:, :-1] <= c.threshold_mv)
+    # Does each actual reset have exactly one crossing since its preceding reset?
+    missing = multiple = trailing = 0
+    latencies = []
+    for neuron in range(c.n_out):
+        cross_samples = np.flatnonzero(crossings[neuron]) + 1
+        previous_reset = 0
+        for reset in np.flatnonzero(flags[neuron]):
+            between = cross_samples[(cross_samples > previous_reset) & (cross_samples <= reset)]
+            missing += len(between) == 0
+            multiple += len(between) > 1
+            if len(between):
+                latencies.append((reset - between[-1]) * c.dt_ms)
+            previous_reset = reset
+        trailing += int((cross_samples > previous_reset).sum())
+    return {"threshold_crossings": int(crossings.sum()), "actual_spike_flags": int(flags.sum()),
+            "resets_without_crossing": int(missing), "resets_with_multiple_crossings": int(multiple),
+            "unfollowed_final_crossings": int(trailing),
+            "max_crossing_to_reset_ms": float(max(latencies, default=0)),
+            "authoritative_detector": "AdEx_spikes (immediate-reset implementation)"}
 
 
-def diagnostics(v, flags, gates, c):
+def diagnostics(v, flags, w, c):
     onset = c.steps(c.settle_ms)
     sample = np.arange(flags.shape[1])
     masks = {"pre": sample < onset,
@@ -506,7 +556,7 @@ def diagnostics(v, flags, gates, c):
     tail_start = max(0, onset - c.steps(min(10., c.settle_ms)))
     result["settling"] = {
         "last_10ms_max_voltage_change_mv": float(np.max(np.abs(v[:, onset] - v[:, tail_start]))),
-        "last_10ms_max_gate_change": float(np.max(np.abs(gates[:, :, onset] - gates[:, :, tail_start]))),
+        "last_10ms_max_adaptation_change_ma_cm2": float(np.max(np.abs(w[:, onset] - w[:, tail_start]))),
         "voltage_at_onset_min_max_mv": [float(v[:, onset].min()), float(v[:, onset].max())],
         "pre_spikes": int(flags[:, :onset].sum())}
     result["voltage_min_max_mv"] = [float(v.min()), float(v.max())]
@@ -516,7 +566,7 @@ def diagnostics(v, flags, gates, c):
         "minimum_ms": float(intervals.min()) if len(intervals) else None,
         "median_ms": float(np.median(intervals)) if len(intervals) else None,
         "fraction_below_2ms": float(np.mean(intervals < 2.)) if len(intervals) else None,
-        "note": "Standard HH voltage crossings; no artificial reset or refractory period"}
+        "note": "Installed AdEx has no explicit refractory period; assess fast firing before biological interpretation"}
     warnings = []
     for pop in ("E", "I"):
         stats = result[pop]["observation"]
@@ -558,11 +608,8 @@ def validate_structure(models, inputs, recurrent, initial, c):
         assert not np.diag(actual_recurrent).any()
         nodes = model["net"].nodes.iloc[N_INPUT:]
         np.testing.assert_array_equal(nodes.v.to_numpy(), initial)
-        expected = HH().init_state({}, jnp.asarray(initial), model["neuron_params"], c.dt_ms)
-        for key, value in expected.items():
-            np.testing.assert_allclose(nodes[key].to_numpy(), np.asarray(value), atol=1e-14)
-        for key, value in model["neuron_params"].items():
-            np.testing.assert_array_equal(nodes[key].to_numpy(), value)
+        assert np.all(nodes.AdEx_w == c.initial_w)
+        assert np.all(nodes.AdEx_spikes == 0)
     if {"FF", "REC"}.issubset(models):
         assert models["FF"]["neuron_params"] == models["REC"]["neuron_params"]
         assert models["FF"]["synapse_params"]["InputExc"] == models["REC"]["synapse_params"]["InputExc"]
@@ -575,7 +622,7 @@ def validate_structure(models, inputs, recurrent, initial, c):
                                  for b, t in (("E", slice(0, c.n_exc)), ("I", slice(c.n_exc, c.n_out)))}}
 
 
-def validate_primitives(c):
+def validate_primitives(c, conversion):
     tiny = Config(dt_ms=.1, input_ms=1., settle_ms=.2, post_ms=.2, pulse_ms=.2)
     # Same-bin collision, adjacent/overlapping pulses, both boundaries, tail clip.
     wave, report, _, _ = replay(np.array([-.0001, 0, .00011, .00012, .0002, .0009, .00099, .001]),
@@ -595,30 +642,30 @@ def validate_primitives(c):
     events, pre = extract_events(flags, c)
     np.testing.assert_allclose(events[0], [0., c.dt_ms, c.input_ms + c.post_ms], atol=1e-10)
     np.testing.assert_allclose(pre[0], [-c.dt_ms], atol=1e-10)
-    # Includes a threshold plateau and consecutive suprathreshold samples.
-    waveform = np.array([[-5., 0., 5., 5., 0., 5., -5.]])
-    detected = detect_hh_spikes(waveform, 0.)
-    np.testing.assert_array_equal(np.flatnonzero(detected[0]), [2, 5])
-    channel = HH()
-    state = channel.init_state({}, jnp.array([-70.]), channel.channel_params, c.dt_ms)
-    update = channel.update_states(state, c.dt_ms, jnp.array([-70.]), channel.channel_params)
-    for key in state:
-        np.testing.assert_allclose(update[key], state[key], atol=1e-14)
-        assert np.all((np.asarray(state[key]) >= 0) & (np.asarray(state[key]) <= 1))
+    # Verify corrected leak dynamics and immediate reset directly, including nonzero b/w.
+    channel = CourseAdEx(conversion)
+    p = {**channel.channel_params, **ADEX_PARAMS, "capacitance": 1.0, "AdEx_b": 2e-5}
+    p = {k: jnp.array([float(v)]) for k, v in p.items()}
+    states = {"AdEx_w": jnp.array([3e-5]), "AdEx_spikes": jnp.array([0.])}
+    out = channel.update_states(states, .1, jnp.array([-60.]), p)
+    expected_w = 3e-5 * np.exp(-.1 / 100) + 1e-4 * (1 - np.exp(-.1 / 100))
+    expected_v = -60. + .1 * 1000 * (-5e-5 * 10 + 1e-4 * np.exp(-5) - expected_w)
+    np.testing.assert_allclose(out["v"], expected_v, atol=1e-10)
+    np.testing.assert_allclose(out["AdEx_w"], expected_w, atol=1e-14)
+    reset = channel.update_states(states, .1, jnp.array([-10.]), p)
+    assert float(reset["AdEx_spikes"][0]) == 1 and float(reset["v"][0]) == -58.
+    reset_w = 3e-5 * np.exp(-.001) + 6e-4 * (1 - np.exp(-.001)) + 2e-5
+    np.testing.assert_allclose(reset["AdEx_w"], reset_w, atol=1e-14)
     return {"replay_boundary_collision_tests": True, "recording_sample_clock": True,
-            "spike_timestamp_and_endpoint_tests": True, "HH_crossing_and_steady_gate_tests": True}
+            "spike_timestamp_and_endpoint_tests": True, "physical_AdEx_update_and_reset": True}
 
 
 def compare_runs(left, right, label, atol=1e-8):
     np.testing.assert_allclose(left[0], right[0], rtol=0, atol=atol, err_msg=label)
     np.testing.assert_array_equal(left[1], right[1], err_msg=label)
-    # Gates are dimensionless; separate graph layouts differ at ~1e-11 in x64.
-    # Exact repeat checks still require bit-for-bit equality.
-    gate_atol = 0.0 if atol == 0 else 1e-9
-    np.testing.assert_allclose(left[2], right[2], rtol=0, atol=gate_atol, err_msg=label)
+    np.testing.assert_allclose(left[2], right[2], rtol=0, atol=1e-12, err_msg=label)
     return {"passed": True, "max_voltage_difference_mv": float(np.max(np.abs(left[0] - right[0]))),
-            "voltage_atol_mv": atol, "spike_crossings_identical": True,
-            "max_gate_difference": float(np.max(np.abs(left[2] - right[2]))), "gate_atol": gate_atol}
+            "voltage_atol_mv": atol, "spike_flags_identical": True}
 
 
 def plot_trial(path, raw_input, pulse_events, recordings, c, title):
@@ -632,7 +679,7 @@ def plot_trial(path, raw_input, pulse_events, recordings, c, title):
     tt = (np.arange(c.n_steps + 1) - c.steps(c.settle_ms)) * c.dt_ms
     selected = np.unique(np.r_[np.linspace(0, c.n_exc - 1, 3, dtype=int),
                                np.linspace(c.n_exc, c.n_out - 1, 3, dtype=int)])
-    for row, (name, (v, flags, gates)) in enumerate(recordings.items(), start=1):
+    for row, (name, (v, flags, w)) in enumerate(recordings.items(), start=1):
         output, pre = extract_events(flags, c)
         event_t = np.r_[pre[0], output[0]]
         event_u = np.r_[pre[1], output[1]]
@@ -659,9 +706,9 @@ def plot_trial(path, raw_input, pulse_events, recordings, c, title):
     arrays = {"sample_times_ms": tt, "input_source_times_ms": times,
               "input_source_channel_ids": units, "replay_high_interval_start_ms": pulse_events[0],
               "replay_high_interval_channel_ids": pulse_events[1], "neuron_ids": np.arange(c.n_out)}
-    for name, (v, flags, gates) in recordings.items():
-        arrays.update({f"{name}_voltage_mv": v, f"{name}_spike_crossings": flags,
-                       f"{name}_HH_m": gates[0], f"{name}_HH_h": gates[1], f"{name}_HH_n": gates[2]})
+    for name, (v, flags, w) in recordings.items():
+        arrays.update({f"{name}_voltage_mv": v, f"{name}_spike_flags": flags,
+                       f"{name}_adaptation_ma_cm2": w})
     np.savez_compressed(path.with_suffix(".npz"), **arrays)
 
 
@@ -704,6 +751,7 @@ def save_results(outdir, arrays, metadata, c):
     (outdir / "metadata.json").write_text(json.dumps(metadata, indent=2, allow_nan=False), encoding="utf-8")
     (outdir / "COMPLETE.txt").write_text("Simulation and archive reload validation completed.\n", encoding="utf-8")
     return destination
+
 
 
 POSTHOC_EXTRA = ("max_neuron_rate_hz", "isi_count", "min_isi_ms", "median_isi_ms",
@@ -1096,7 +1144,7 @@ def plot_sweep(outdir, summaries, c):
 
 
 def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
-                      provenance, compatibility, validation):
+                      provenance, compatibility, validation, conversion):
     values = sweep_values(c)
     prefix = "posthoc_input_g" if c.posthoc_input_g else "input_g_sweep"
     shared_name = "posthoc_shared" if c.posthoc_input_g else "sweep_shared"
@@ -1108,8 +1156,6 @@ def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
         f"_{MODEL_NAME}_input_g_{'posthoc' if c.posthoc_input_g else 'sweep'}_" + uuid.uuid4().hex[:8])
     outdir.mkdir(parents=True, exist_ok=False)
     print(f"Sweep directory: {outdir}", flush=True)
-    if c.validate:
-        validation["HH_timestep_check"] = hh_timestep_check(outdir)
     with tables.open_file(data_path, mode="r") as fh:
         trial_ids, labels, speakers = select_trials(fh, c, seeds["selection"])
         if c.posthoc_input_g:
@@ -1127,7 +1173,7 @@ def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
                 posthoc_maximum="max_neuron_rate_hz is maximum within each trial; summary reports its median and overall maximum.",
                 posthoc_failure="Trial metrics blank and per-neuron rates NaN when invalid; distributions label valid counts. Pooled voltage/legacy aggregates blank if any trial invalid.",
                 depolarisation_pattern="HH high voltage with reduced firing warrants inspection only; AdEx is never classified as sodium-inactivation block.")
-        metadata["spike_detection"] = {"method": "HH upward voltage crossing at sample k",
+        metadata["spike_detection"] = {"method": "AdEx_spikes at recorded sample k",
                                         "timestamp_ms": "(k-settle_steps)*dt", "diagnostic_threshold_mv": c.threshold_mv}
         write_json(outdir / "metadata.json", metadata)
         rows, summaries, first_trial_hashes = [], [], {}
@@ -1201,7 +1247,7 @@ def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
                                     validation[f"{name}_immediate_repeat"] = compare_runs(result, repeat, "sweep immediate repeat", atol=0.)
                                 if c.validate and g == chosen_g:
                                     ordinary_config = replace(c, input_g=g, sweep_input_g=False)
-                                    ordinary = build_network(ordinary_config, inputs, recurrent, initial, name)
+                                    ordinary = build_network(ordinary_config, inputs, recurrent, initial, name, conversion)
                                     ordinary_result = simulate(ordinary, waveform, ordinary_config)
                                     validation[f"{name}_ordinary_matches_sweep_first_trial"] = {
                                         "input_g_us": g, **compare_runs(result, ordinary_result, "ordinary versus sweep")}
@@ -1218,8 +1264,7 @@ def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
                             if ff is None:
                                 ff = simulate(models["FF"], waveform, c, input_g=g)
                             zero = simulate(models["REC"], waveform, c, recurrent_scale=0., input_g=g)
-                            validation["zero_recurrence_matches_FF"] = compare_runs(
-                                ff, zero, "sweep zero recurrence", atol=1e-6 if c.posthoc_input_g else 1e-8)
+                            validation["zero_recurrence_matches_FF"] = compare_runs(ff, zero, "sweep zero recurrence")
                         except FloatingPointError as error:
                             validation["zero_recurrence_matches_FF"] = {"passed": False, "numerical_error": str(error)}
                     if order < c.diagnostic_trials and recordings:
@@ -1333,69 +1378,14 @@ def run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
         print(f"{MODEL_NAME} sweep {metadata['status']}: {outdir}", flush=True)
 
 
-def hh_timestep_check(outdir):
-    """Independent single-cell current-pulse check; not a conductance calibration."""
-    records, metrics = {}, {}
-    for dt in (.1, .05):
-        cell = jx.Cell(jx.Branch(jx.Compartment(), ncomp=1), parents=[-1])
-        cell.insert(HH())
-        for key, value in {"radius": 10., "length": 10., "capacitance": 1., "v": -70.}.items():
-            cell.set(key, value)
-        cell.init_states(delta_t=dt)
-        cell.record("v", verbose=False)
-        for key in ("HH_m", "HH_h", "HH_n"):
-            cell.record(key, verbose=False)
-        current = np.zeros(int(round(120 / dt)))
-        current[int(round(20 / dt)):int(round(80 / dt))] = .1  # nA
-        stimulus = cell.data_stimulate(jnp.asarray(current), verbose=False)
-        record = np.asarray(jx.integrate(cell, data_stimuli=stimulus, delta_t=dt))
-        if not np.isfinite(record).all():
-            raise FloatingPointError(f"HH single-cell timestep check failed at dt={dt}")
-        assert np.all((record[1:] >= 0) & (record[1:] <= 1))
-        times = np.arange(record.shape[1]) * dt
-        spike_times = times[detect_hh_spikes(record[:1], 0.)[0]]
-        records[str(dt)] = (times, record, spike_times)
-        metrics[str(dt)] = {"dt_ms": dt, "spike_count": len(spike_times),
-                            "spike_times_ms": spike_times.tolist(),
-                            "voltage_min_max_mv": [float(record[0].min()), float(record[0].max())],
-                            "finite_and_gates_in_range": True}
-    coarse, fine = records["0.1"], records["0.05"]
-    paired = min(len(coarse[2]), len(fine[2]))
-    report = {"protocol": "Single standard HH cell, -70 mV and equilibrium gates; 0.1 nA current pulse [20,80) ms; 120 ms total",
-              "runs": metrics,
-              "spike_count_difference": int(len(coarse[2]) - len(fine[2])),
-              "max_paired_spike_time_difference_ms": float(np.max(np.abs(coarse[2][:paired] - fine[2][:paired]))) if paired else None,
-              "voltage_rms_difference_mv": float(np.sqrt(np.mean((coarse[1][0] - fine[1][0, ::2]) ** 2))),
-              "interpretation": "Finite-trace/gate stability and spike timing inspection only; not proof of full-network timestep convergence"}
-    arrays = {}
-    for dt, (times, record, spike_times) in records.items():
-        label = dt.replace(".", "p")
-        arrays.update({f"dt_{label}_times_ms": times, f"dt_{label}_voltage_mv": record[0],
-                       f"dt_{label}_HH_gates": record[1:], f"dt_{label}_spike_times_ms": spike_times})
-    np.savez_compressed(outdir / "hh_timestep_check.npz", **arrays)
-    write_json(outdir / "hh_timestep_check.json", report)
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(10, 3))
-    for dt, (times, record, _) in records.items():
-        ax.plot(times, record[0], lw=.8, label=f"dt={dt} ms")
-    ax.set(xlabel="Time (ms)", ylabel="Voltage (mV)", title="HH single-cell timestep diagnostic")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(outdir / "hh_timestep_check.png", dpi=170)
-    plt.close(fig)
-    return report
-
-
 def main():
     c = parse_config()
     started = time.perf_counter()
     seeds = seeds_for(c)
     data_path = locate_data(c)
-    compatibility = hh_implementation_info()
-    print(f"Jaxley {importlib.metadata.version('jaxley')}; standard HH: {HH().channel_params}", flush=True)
-    primitive_checks = validate_primitives(c)
+    conversion, compatibility = adex_compatibility()
+    print(f"Jaxley {importlib.metadata.version('jaxley')}; AdEx internal current conversion={conversion:g}", flush=True)
+    primitive_checks = validate_primitives(c, conversion)
     inputs, recurrent, wiring_provenance = connectivity(c, seeds)
     initial = np.random.default_rng(seeds["initial"]).normal(c.initial_mv, c.initial_sd_mv, c.n_out)
     if np.any(initial >= c.threshold_mv):
@@ -1405,18 +1395,16 @@ def main():
     models = {}
     for name in needed:
         print(f"Building {name}: {c.n_exc} E + {c.n_inh} I, {int(inputs.sum())} input edges", flush=True)
-        models[name] = build_network(c, inputs, recurrent, initial, name)
+        models[name] = build_network(c, inputs, recurrent, initial, name, conversion)
     validation = {**primitive_checks, **validate_structure(models, inputs, recurrent, initial, c)}
     if c.sweep_input_g or c.posthoc_input_g:
         run_input_g_sweep(c, models, inputs, recurrent, initial, seeds, data_path,
-                          wiring_provenance, compatibility, validation)
+                          wiring_provenance, compatibility, validation, conversion)
         return
     output_root = Path(c.output_dir).expanduser().resolve()
-    outdir = output_root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_HH_" + uuid.uuid4().hex[:8])
+    outdir = output_root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8])
     outdir.mkdir(parents=True, exist_ok=False)
     print(f"Run directory: {outdir}", flush=True)
-    if c.validate:
-        validation["HH_timestep_check"] = hh_timestep_check(outdir)
     print(f"Recurrent edge counts: {validation['recurrent_counts']}", flush=True)
     outputs = {name: [] for name in conditions}
     pre_outputs = {name: [] for name in conditions}
@@ -1508,30 +1496,32 @@ def main():
                              ("jax", "jaxlib", "jaxley", "numpy", "tables", "matplotlib", "pandas")},
         "python": platform.python_version(), "platform": platform.platform(),
         "jax_devices": [str(d) for d in jax.devices()], "jax_enable_x64": True,
-        "neuron_model": "Standard installed Jaxley HH (Hodgkin-Huxley)",
-        "compatibility": compatibility,
+        "neuron_model": "Installed Jaxley AdEx with probed physical-current unit adapter",
+        "compatibility": compatibility, "course_ADEX_PARAMS": ADEX_PARAMS,
         "neuron_parameters": models[needed[0]]["neuron_params"],
         "geometry": {"radius_um": 10., "length_um": 10., "capacitance_uf_cm2": 1.,
-                     "axial_resistivity_ohm_cm": float(models[needed[0]]["net"].nodes.axial_resistivity.iloc[0])},
+                     "axial_resistivity_ohm_cm": float(models[needed[0]]["net"].nodes.axial_resistivity.iloc[0]),
+                     "physical_passive_tau_ms": 1 / (1000 * c.adex_g_l)},
         "synapse_parameters": {name: models[name]["synapse_params"] for name in needed},
-        "parameter_units": {"HH_intrinsic_conductances": "S/cm2", "HH_gates": "dimensionless",
+        "parameter_units": {"AdEx_g_L_and_a": "S/cm2", "AdEx_b_and_w": "mA/cm2",
                             "gS": "uS", "k_minus": "1/ms (delta_t is ms)", "voltages": "mV"},
         "initial_states": {"input_v_mv": c.replay_rest_mv, "input_Leak_gLeak": 0.,
                            "input_Leak_eLeak_mv": float(models[needed[0]]["net"].nodes.Leak_eLeak.iloc[0]),
-                           "output_v_mv": "initial_voltage_mv array", "HH_gates": initial_channel_states(models[needed[0]]), "all_synapse_s": 0},
+                           "output_v_mv": "initial_voltage_mv array", "AdEx_w": c.initial_w,
+                           "AdEx_spikes": 0, "all_synapse_s": 0},
         "reset_protocol": "Every integrate call starts from model initial states, including settling; no final states reused",
         "replay_mapping": "float64 seconds*1000; ceil(t/dt); [0,input_ms); discard ceil==offset; clamp[settle_steps+bin-1]; OR pulses clipped at input offset",
         "replay_synapse_timing": "Clamp applied at end of step; synapses see it on next step; one dt numerical lag retained, not subtracted",
-        "spike_detection": {"primary": "HH upward voltage crossings at sample k; t_ms=(k-settle_steps)*dt",
+        "spike_detection": {"primary": "AdEx_spikes at sample k; t_ms=(k-settle_steps)*dt",
                             "diagnostic": f"upward voltage crossing of {c.threshold_mv} mV at sample k+1",
-                            "reason": "HH spikes overshoot the default 0 mV threshold; one event per upward crossing",
+                            "reason": "Installed AdEx resets immediately; voltage crossings can miss reset events",
                             "observation_window_ms": [0., c.input_ms + c.post_ms], "right_endpoint_included": True},
         "connectivity_note": "Matrices [pre,post]; recurrent_connectivity is candidate REC wiring, actual per-condition edges also saved; global output IDs = 700+local ID",
         "tonotopy_note": "E and I centres each span 0..699; centres array is nominal and unused for random wiring",
-        "calibration": "None. Matched baseline input g=3e-5 uS retained; notebook HH reference is 3e-4 uS; recurrent strengths provisional.",
+        "calibration": "No automated parameter sweep. Input g=3e-5 uS from course AdEx example; recurrent strengths provisional. Unit correction is not parameter fitting.",
         "limitations": ["Small trial subsets do not validate biological firing regimes or generalisation",
-                        "HH uses continuous membrane dynamics and standard gates, without imposed spikes or resets",
-                        "Recurrent transmitter release depends on actual HH voltage waveforms; equal g across neuron models need not give equal effective drive",
+                        "Installed AdEx has immediate reset, no explicit refractory period and no imposed AP waveform",
+                        "Recurrent transmitter release is graded by AdEx upstroke voltage; its pulse shape differs from the clamped BC input",
                         "No explicit axonal delays; voltage-clamp replay has a retained one-step numerical lag",
                         "No decoding, training, or automatic conductance calibration"],
         "analysis_adapter": "Use offsets to form SHD times lists divided by 1000 (seconds), units lists, original labels and speaker_ids; supply n_channels=len(neuron_ids) explicitly",
