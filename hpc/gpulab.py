@@ -45,6 +45,7 @@ def main():
     p.add_argument('--backend', choices=['gpu', 'cpu'], default='gpu')
     p.add_argument('--cluster', type=int, default=11)
     p.add_argument('--submit', action='store_true')
+    p.add_argument('--hold', action='store_true', help='Submit but hold until the preflight is complete')
     a = p.parse_args()
     if not re.fullmatch(r'[0-9a-f]{40}', a.commit):
         p.error('Use a full immutable commit hash')
@@ -74,7 +75,11 @@ def main():
     spec.write_text(json.dumps(job, indent=2), encoding='utf-8')
     print(spec)
     if a.submit:
-        result = subprocess.run([a.cli, '--cert', a.cert, 'submit', '--project', a.project, str(spec)],
+        submit_args = [a.cli, '--cert', a.cert, 'submit', '--project', a.project]
+        if a.hold:
+            submit_args.append('--hold')
+        submit_args.append(str(spec))
+        result = subprocess.run(submit_args,
                                 capture_output=True, text=True)
         receipt.write_text(result.stdout + result.stderr, encoding='utf-8')
         print(result.stdout, result.stderr)
