@@ -23,7 +23,7 @@ def call(argv, log, backend=None):
         result.check_returncode()
     return time.perf_counter() - start
 
-def preflight(root, split):
+def preflight(root, split, requested_backend):
     from compbio2026.data import fetch
     data = Path(fetch(split, str(root / 'data')))
     print('Dataset:', data, digest_file(data), flush=True)
@@ -37,8 +37,9 @@ def preflight(root, split):
     (root / 'failed').mkdir()
     plan = []
     results = {}
+    backends = ['cpu', 'gpu'] if requested_backend == 'gpu' else ['cpu']
     for model in ['adex', 'hh']:
-        for backend in ['cpu', 'gpu']:
+        for backend in backends:
             output = root / f'preflight_{model}_{backend}'
             seconds = call([f'simulate_ff_rec_{model}_full.py', '--data-path', data, '--split', split,
                             '--smoke-test', '--run-dir', output], logs / f'{model}_{backend}.log', backend)
@@ -48,19 +49,20 @@ def preflight(root, split):
             results[f'{model}_{backend}'] = {'wall_seconds': seconds, 'devices': metadata['jax_devices']}
             print(model, backend, seconds, flush=True)
         import numpy as np
-        with np.load(root / f'preflight_{model}_cpu/events.npz') as cpu, np.load(root / f'preflight_{model}_gpu/events.npz') as gpu:
-            for key in cpu.files:
-                if key == 'metadata_json':
-                    continue
-                # GPU kernels can differ from CPU by a few final floating-point
-                # bits. Keep masks/IDs/labels exact while allowing bounded
-                # round-off in numeric event arrays.
-                if cpu[key].dtype.kind == 'f':
-                    atol = 1e-6 if model == 'adex' else 1e-4
-                    np.testing.assert_allclose(cpu[key], gpu[key], rtol=0.0, atol=atol,
-                                               err_msg=f'CPU/GPU {model}: {key}')
-                else:
-                    np.testing.assert_array_equal(cpu[key], gpu[key], err_msg=f'CPU/GPU {model}: {key}')
+        if requested_backend == 'gpu':
+            with np.load(root / f'preflight_{model}_cpu/events.npz') as cpu, np.load(root / f'preflight_{model}_gpu/events.npz') as gpu:
+                for key in cpu.files:
+                    if key == 'metadata_json':
+                        continue
+                    # GPU kernels can differ from CPU by a few final floating-point
+                    # bits. Keep masks/IDs/labels exact while allowing bounded
+                    # round-off in numeric event arrays.
+                    if cpu[key].dtype.kind == 'f':
+                        atol = 1e-6 if model == 'adex' else 1e-4
+                        np.testing.assert_allclose(cpu[key], gpu[key], rtol=0.0, atol=atol,
+                                                   err_msg=f'CPU/GPU {model}: {key}')
+                    else:
+                        np.testing.assert_array_equal(cpu[key], gpu[key], err_msg=f'CPU/GPU {model}: {key}')
         call([f'param_sweep_{model}.py', '--data-path', data, '--split', split,
               '--output-dir', root / 'sweeps', '--list-configs', '--dry-run'], logs / f'{model}_manifest.log')
         manifest = next((root / 'sweeps').glob(f'*_{"AdEx" if model == "adex" else "HH"}_parameter_sweep_*'))
@@ -129,6 +131,6 @@ if __name__ == '__main__':
     if args.root.parent != Path('/project_ghent/rsegawa/compbio-2026/runs'):
         raise ValueError('Refusing a path outside the isolated compbio run namespace')
     if args.mode == 'preflight':
-        preflight(args.root, args.split)
+        preflight(args.root, args.split, args.backend)
     else:
         worker(args.root, args.worker, args.backend)

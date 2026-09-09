@@ -21,7 +21,12 @@ if [ "$MODE" = preflight ]; then
   git clone https://github.com/whizzkid-ox/compbio-2026.git "$RUN_ROOT/code"
   git -C "$RUN_ROOT/code" checkout --detach "$COMMIT"
   python3 -m venv "$RUN_ROOT/venv"
-  "$RUN_ROOT/venv/bin/pip" install 'jax[cuda12]==0.11.1' jaxley==0.14.0 numpy==2.5.2 tables==3.11.1 matplotlib==3.11.1 pandas==3.0.5 scipy==1.18.1 h5py
+  if [ "$BACKEND" = gpu ]; then
+    JAX_PACKAGE='jax[cuda12]==0.11.1'
+  else
+    JAX_PACKAGE='jax==0.11.1'
+  fi
+  "$RUN_ROOT/venv/bin/pip" install "$JAX_PACKAGE" jaxley==0.14.0 numpy==2.5.2 tables==3.11.1 matplotlib==3.11.1 pandas==3.0.5 scipy==1.18.1 h5py
   "$RUN_ROOT/venv/bin/pip" freeze > "$RUN_ROOT/environment.txt"
 else
   test -f "$RUN_ROOT/PREFLIGHT_DONE.json"
@@ -52,9 +57,9 @@ def main():
         p.error('Use a full immutable commit hash')
     if not re.fullmatch(r'/project_ghent/rsegawa/compbio-2026/runs/[A-Za-z0-9_-]+', a.root):
         p.error('Run root must be an isolated compbio-2026 run directory')
-    if a.worker not in range(4):
-        p.error('At most four worker slots are supported')
-    resources = {'cpus': 4, 'gpus': int(a.backend == 'gpu'), 'cpuMemoryGb': 24}
+    if a.worker not in range(10):
+        p.error('At most ten worker slots are supported')
+    resources = {'cpus': 10, 'gpus': int(a.backend == 'gpu'), 'cpuMemoryGb': 24}
     if a.cluster is not None:
         resources['clusterId'] = a.cluster
     job = {'name': f'compbio-shd-{a.split}-{a.mode}-{a.worker}',
