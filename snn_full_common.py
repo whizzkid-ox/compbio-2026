@@ -358,6 +358,25 @@ def compare_zero_recurrence(p, left, right):
             "spike_crossings_identical": True}
 
 
+def compare_repeat(p, left, right, model, backend):
+    """Check a repeated compiled trial, allowing only backend round-off.
+
+    CPU repeats retain the prototype's bitwise control. GPU kernels can vary in
+    the last floating-point bits between launches; voltage/state tolerances are
+    explicit while event/crossing masks remain exact.
+    """
+    if backend == "cpu":
+        return p.compare_runs(left, right, "full repeat", atol=0.)
+    voltage_atol = 1e-6 if model == "AdEx" else 1e-4
+    state_atol = 1e-8 if model == "AdEx" else 1e-6
+    np.testing.assert_allclose(left[0], right[0], rtol=0., atol=voltage_atol, err_msg="full repeat")
+    np.testing.assert_array_equal(left[1], right[1], err_msg="full repeat spike/crossing mask")
+    np.testing.assert_allclose(left[2], right[2], rtol=0., atol=state_atol, err_msg="full repeat state")
+    return {"passed": True, "max_voltage_difference_mv": float(np.max(np.abs(left[0] - right[0]))),
+            "voltage_atol_mv": voltage_atol, "state_atol": state_atol,
+            "spike_crossings_identical": True, "backend_roundoff_allowed": True}
+
+
 def full_main(model, entry):
     p = prototype(model)
     args = full_parser(p, model).parse_args()
@@ -513,7 +532,7 @@ def full_main(model, entry):
                             recordings[name] = record
                             if order == 0 and args.validate_controls:
                                 repeat = p.simulate(models[name], wave, c)
-                                meta["validation"][name + "_exact_repeat"] = p.compare_runs(record, repeat, "full repeat", atol=0.)
+                                meta["validation"][name + "_repeat"] = compare_repeat(p, record, repeat, model, meta["backend"])
                                 first_hashes[name] = p.recording_hash(record)
                         row["elapsed_seconds"] = time.perf_counter() - t0
                         item["events"][name] = output
