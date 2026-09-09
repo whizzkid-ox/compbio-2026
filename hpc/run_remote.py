@@ -52,7 +52,15 @@ def preflight(root, split):
             for key in cpu.files:
                 if key == 'metadata_json':
                     continue
-                np.testing.assert_array_equal(cpu[key], gpu[key], err_msg=f'CPU/GPU {model}: {key}')
+                # GPU kernels can differ from CPU by a few final floating-point
+                # bits. Keep masks/IDs/labels exact while allowing bounded
+                # round-off in numeric event arrays.
+                if cpu[key].dtype.kind == 'f':
+                    atol = 1e-6 if model == 'adex' else 1e-4
+                    np.testing.assert_allclose(cpu[key], gpu[key], rtol=0.0, atol=atol,
+                                               err_msg=f'CPU/GPU {model}: {key}')
+                else:
+                    np.testing.assert_array_equal(cpu[key], gpu[key], err_msg=f'CPU/GPU {model}: {key}')
         call([f'param_sweep_{model}.py', '--data-path', data, '--split', split,
               '--output-dir', root / 'sweeps', '--list-configs', '--dry-run'], logs / f'{model}_manifest.log')
         manifest = next((root / 'sweeps').glob(f'*_{"AdEx" if model == "adex" else "HH"}_parameter_sweep_*'))
