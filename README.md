@@ -53,6 +53,41 @@ decoding.decode(data.flatten(X), y)                    # accuracy with its chanc
 selection.compare_selectors(X, y, k=50)                # sparse group lasso vs. heuristics, ablated
 ```
 
+### Extended SNN simulations and decoding
+
+This fork also contains matched feedforward (FF) and recurrent (REC) simulations
+for AdEx and Hodgkin–Huxley neurons, plus a corrected decoder for their saved
+event archives.
+
+| Script | Purpose |
+|---|---|
+| `simulate_ff_rec_adex.py` | Small AdEx FF/REC runs, diagnostics, and input-conductance checks |
+| `simulate_ff_rec_hh.py` | Hodgkin–Huxley counterpart with the same network and input protocol |
+| `simulate_ff_rec_adex_full.py` | Checkpointed full AdEx TRAIN or TEST simulation |
+| `simulate_ff_rec_hh_full.py` | Checkpointed full HH TRAIN or TEST simulation |
+| `param_sweep_adex.py` | AdEx one-factor-at-a-time parameter manifests and runs |
+| `param_sweep_hh.py` | HH one-factor-at-a-time parameter manifests and runs |
+| `analyse_snn_decoding.py` | Fixed TRAIN-to-TEST Ridge decoding, controls, paired inference, and figures |
+
+Inspect each command before running it:
+
+```shell
+python simulate_ff_rec_adex.py --help
+python simulate_ff_rec_adex_full.py --help
+python param_sweep_adex.py --help
+python analyse_snn_decoding.py --help
+```
+
+The simulation environment is defined in `environment-routeb.yml`. Full runs
+write checkpointed event archives and metadata to a user-selected output
+directory. The decoder expects separate completed TRAIN and TEST run roots and
+writes tables, trial-level predictions, an audit report, and figures to
+`--output-dir`.
+
+Datasets and generated outputs are intentionally excluded from Git. Keep SHD
+under `data/` and simulation/analysis products under `results/` or another
+external results directory.
+
 Full instructions, including what to do when something breaks: **[docs/00-setup.md](docs/00-setup.md)**.
 
 ---
@@ -153,6 +188,7 @@ docs/                setup, dataset, stages, methods, recovery, routes, reading
 tools/               SpikeList / StateMatrix, carried over from the 2025 course
 data/                downloaded dataset (gitignored)
 plots/               your figure output (gitignored)
+results/             local simulation and analysis output (gitignored)
 ```
 
 ## Deliverables

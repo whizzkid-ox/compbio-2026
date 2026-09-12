@@ -1,4 +1,4 @@
-"""HH full entry point. See HPC_SIMULATIONS.md for usage and storage semantics."""
+"""HH full entry point. Run with --help for usage and storage options."""
 
 from snn_full_common import full_main
 

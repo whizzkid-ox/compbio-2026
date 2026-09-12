@@ -239,6 +239,5 @@ credentials.json
 *.pem
 secrets/
 
-# SNN experiment outputs and local GPULab submission records
+# SNN experiment outputs
 results/
-hpc/submissions/

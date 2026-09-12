@@ -1,4 +1,4 @@
-"""AdEx sweep entry point. See HPC_SIMULATIONS.md for usage and storage semantics."""
+"""AdEx sweep entry point. Run with --help for usage and storage options."""
 
 from snn_full_common import sweep_main
 
